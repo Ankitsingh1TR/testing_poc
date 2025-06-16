@@ -104,4 +104,12 @@ private void markAndSaveSample(Dataset<Row> sample, String measureCode, int mrss
 }
 
 }
+spark.sparkContext().setJobGroup("SHOW_SAMPLE", "Show sampled members for " + measureCode);
+markedSample.show(false);
+
+spark.sparkContext().setJobGroup("COUNT_SAMPLE", "Count sampled members for " + measureCode);
+long count = markedSample.count();
+
+spark.sparkContext().setJobGroup("WRITE_SAMPLE", "Write sampled members to DB for " + measureCode);
+dbUtils.insertIntoHPAL(markedSample);
 
