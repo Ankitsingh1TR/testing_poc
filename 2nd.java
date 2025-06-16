@@ -112,4 +112,38 @@ long count = markedSample.count();
 
 spark.sparkContext().setJobGroup("WRITE_SAMPLE", "Write sampled members to DB for " + measureCode);
 dbUtils.insertIntoHPAL(markedSample);
+_____________
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+
+private void markAndSaveSample(Dataset<Row> sample, String measureCode, int mrss, int oversampleSize) {
+    Dataset<Row> markedSample = sample.withColumn("SampleType",
+            when(col("RowNum").leq(mrss), lit("Primary")).otherwise(lit("Auxiliary")));
+
+    // Convert to JSON and print
+    List<Row> rows = markedSample.collectAsList();
+    ObjectMapper mapper = new ObjectMapper();
+    mapper.enable(SerializationFeature.INDENT_OUTPUT); // Pretty print
+
+    System.out.println("📦 Final sample rows for " + measureCode + ":");
+    for (Row row : rows) {
+        Map<String, Object> jsonMap = new LinkedHashMap<>();
+        for (StructField field : row.schema().fields()) {
+            jsonMap.put(field.name(), row.getAs(field.name()));
+        }
+        try {
+            String json = mapper.writeValueAsString(jsonMap);
+            System.out.println(json);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    long count = rows.size();
+    System.out.println("✔ Total rows to insert: " + count);
+
+    dbUtils.insertIntoHPAL(markedSample);
+    System.out.println("✔ Data written to hedisPrimaryAuxilaryList for " + measureCode);
+}
 
