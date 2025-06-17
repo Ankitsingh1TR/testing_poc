@@ -1,1 +1,98 @@
 
+To implement the metadata-driven sampling logic for HEDIS Hybrid Measures using Spark, by processing MRR JSON data and resolving appropriate sampling properties (CYAR, PYR, OverSamplingRate) as per business rules.
+
+
+---
+
+🔄 High-Level Workflow
+
+Step	Description
+
+1️⃣	Fetch JSON request from hedisSamplingRequest_MRR table using correlationId
+2️⃣	Flatten the JSON structure to extract MeasureGroup, SubMeasures, CYAR, PYR, ProductCategory, etc.
+3️⃣	Apply business overrides (e.g., invert CYAR/PYR for HBD2, GSD2)
+4️⃣	Filter out specific SubMeasure exclusions (HBD1, BPD, GSD1) and Exchange product lines
+5️⃣	Join with hedisMeasuresSampleSizeInfo to resolve which measure uses CYAR or PYR
+6️⃣	Join with vw_healthPlanProductCategory for submission year mapping
+7️⃣	Take minimum available valid value between CYAR and PYR
+8️⃣	Output the sampling factors (MeasureCode, ProductLine, SubmissionId, OverSamplingRate, and resolved CYAR/PYR value)
+
+
+
+---
+
+📂 Data Sources Used
+
+Source Table/View	Purpose
+
+hedisSamplingRequest_MRR	Input MRR request (contains JSON structure)
+hedisMeasuresSampleSizeInfo	Indicates which measure uses CYAR or PYR
+vw_healthPlanProductCategory	Maps submission ID to Measurement Year
+
+
+
+---
+
+🔑 Key SP3 Properties Explained
+
+Property	Extracted From	Description
+
+MeasureCode	data.measureGroup	Grouped measure used for sampling
+ClinicalMeasureId	subMeasures.clinicalSubMeasureId	Individual sub-measure (used for exclusions and override logic)
+ProductLine	productCategory	Used to exclude Exchange lines
+CYAR, PYR	subMeasures.cyar / pyr	Sampling rate percentages
+OverSamplingRate	data.oversamplingRate / 100	Converted to decimal for sampling
+SubmissionId	submissionId	Used to join with plan mapping
+OrganizationId	organizationId	Used for traceability
+CorrelationId	from request context	Execution ID for identifying the request
+MeasurementYear	measurementYear	Used to join with metadata table
+
+
+
+---
+
+🔄 Special Override Logic
+
+Condition	Action
+
+If ClinicalMeasureId is HBD2 or GSD2	Replace CYAR = 100 - CYAR, PYR = 100 - PYR
+If ClinicalMeasureId is HBD1, GSD1, or BPD	Exclude from processing
+If ProductLine = Exchange	Exclude from processing
+
+
+
+---
+
+🧮 Sampling Factor Resolution Logic
+
+1. Join request with hedisMeasuresSampleSizeInfo
+
+Use matching MeasureCode
+
+Only keep rows matching measurementYear
+
+
+
+2. Check if metadata defines:
+
+cyar = 'CYAR' → pick CYAR
+
+pyr = 'PYR'   → pick PYR
+
+
+
+3. Use min(CYAR), min(PYR) at group level (some measures have multiple sub-measures)
+
+
+4. Final fallback logic:
+
+CYAR_PYR = COALESCE(min_CYAR, min_PYR)
+
+No temp tables required (in-memory transformations)
+
+Scalable across submissions and years
+
+Fully traceable with correlationId
+
+Easily testable with .show() or .write().csv()
+
