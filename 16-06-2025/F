@@ -1,0 +1,17 @@
+Jira Worklog Description (12–19 June)
+
+Task: Sampling Code – Project Setup & Spark Java Implementation (based on MY2024 logic)
+
+Worklog Summary:
+
+12 June: Project setup in Eclipse, branch creation, dependency resolution, DB connection config – 6.5h
+
+13 June: Reviewed BRD & SP3 logic, started Spark Java conversion, created base structure – 6.5h
+
+14 June: Implemented logic for MRSS, OS, eligible members; initial testing – 6.5h
+
+17 June: Refined DBUtil class, added Spark JDBC queries, resolved output issues – 6.5h
+
+18 June: Validated business logic with SQL output, added CSV export support – 6.5h
+
+19 June: Finalized HPALPopulation class, handled dataset output & tested complete SP3 flow – 6.5h
