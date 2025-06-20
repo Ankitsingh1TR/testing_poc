@@ -1,0 +1,25 @@
+} else if (measureCode.equalsIgnoreCase("TRC") || measureCode.equalsIgnoreCase("RAC")) {
+
+    eligibleMembers = fqrIntermediate.alias("fqr")
+        .join(memberEnrollmentEmp.as("mee"),
+            col("fqr.MeasureCode").equalTo(col("mee.MeasureCode"))
+                .and(col("fqr.SubmissionId").equalTo(col("mee.SubmissionId")))
+                .and(col("fqr.patientid").equalTo(col("mee.patientid"))),
+            "left"
+        )
+        .join(clinicalReportingPeriod.alias("crp"),
+            col("fqr.reportingperiodid").equalTo(col("crp.reportingperiodid")),
+            "inner"
+        )
+        .filter(col("fqr.ClinicalStatusCode").isin(1, 6, 15))
+        .filter(col("fqr.MeasureCode").equalTo(measureCode))
+        .filter(col("fqr.SubmissionId").equalTo(submissionId))
+        .filter(
+            functions.when(col("mee.isemployee").isNotNull(), col("mee.isemployee")).otherwise(lit(0))
+                .equalTo(functions.when(lit(isEmployee == 1), lit(1)).otherwise(lit(0)))
+        )
+        .filter(col("crp.periodstartdate").equalTo(lit(periodStartDate)))
+        .filter(col("crp.periodenddate").equalTo(lit(periodEndDate)))
+        .select(col("fqr.factvisitid"))
+        .distinct();
+}
