@@ -1,1 +1,90 @@
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.{Dataset, Row, SparkSession}
+import java.util.Properties
+import org.apache.spark.broadcast.Broadcast
 
+val dbProperties = new Properties()
+dbProperties.put("user", "pltadmin")
+dbProperties.put("password", "pltq@dmin!@#5123")
+dbProperties.put("driver", "com.microsoft.sqlserver.jdbc.SQLServerDriver")
+
+val jdbcUrl = "jdbc:sqlserver://10.100.14.19;databaseName=BICDataMart_PLT_QA"
+
+// Step 1: Fetch active correlation IDs
+val correlationIdDF = spark.read
+  .jdbc(jdbcUrl,
+    "(SELECT correlationid FROM hedisSamplingRequest_MRR WHERE requesttype = 'SAMPLING' AND campaignStatus = 'received' AND issamplingprocessed = 0) AS tmp",
+    dbProperties)
+
+val correlationIds = correlationIdDF.collect().map(_.getString(0))
+
+// Step 2: Iterate correlation IDs
+for (corrId <- correlationIds) {
+  
+  // Step 3: Fetch JSON object
+  val jsonObjectDF = spark.read
+    .jdbc(jdbcUrl,
+      s"(SELECT jsonobject FROM hedisSamplingRequest_MRR WHERE correlationid = '$corrId' AND requesttype = 'SAMPLING' AND campaignStatus = 'received' AND issamplingprocessed = 0) AS tmp",
+      dbProperties)
+    .as[String]
+    .first()
+
+  val jsonDataset = spark.createDataset(Seq(jsonObjectDF))
+  val json = spark.read.json(jsonDataset)
+
+  val jsonSampleRequest = json.withColumn("data", explode(col("data")))
+    .withColumn("subMeasures", explode(col("data.subMeasures")))
+    .select(
+      col("productCategory").alias("ProductLine"),
+      col("data.measureGroup").alias("MeasureCode"),
+      col("subMeasures.clinicalSubMeasureId").alias("ClinicalMeasureId"),
+      (col("data.oversamplingRate") / 100).alias("OverSamplingRate"),
+      col("measurementYear"),
+      col("subMeasures.cyar").alias("CYAR"),
+      col("subMeasures.pyr").alias("PYR"),
+      col("excludeEmp").cast("integer").alias("IsEmployee"),
+      lit(corrId).alias("CorrelationId"),
+      col("organizationId"),
+      col("runConfigId"),
+      col("submissionId")
+    )
+
+  val measurementYear = jsonSampleRequest.select("measurementYear").first().getLong(0)
+  val organizationId = jsonSampleRequest.select("organizationId").first().getLong(0)
+  val runConfigId = jsonSampleRequest.select("runConfigId").first().getLong(0)
+  val submissionId = jsonSampleRequest.select("submissionId").first().getLong(0)
+  val measureCodes = jsonSampleRequest.select("MeasureCode").distinct().as[String].collect().toList
+
+  // Step 4: Metadata table 1 - Sample Size Info
+  val hedisMeasuresSampleSizeInfo = spark.read
+    .jdbc(jdbcUrl, "(SELECT * FROM hedisMeasuresSampleSizeInfo WHERE measurementyear = 2024) AS tmp", dbProperties)
+  val broadcastSampleSizeInfo = spark.sparkContext.broadcast(hedisMeasuresSampleSizeInfo.collect().toList)
+
+  // Step 5: Metadata table 2 - Config lookup
+  val sampleSizeConfigDF = spark.read
+    .jdbc(jdbcUrl, s"(SELECT * FROM hedisSampleSizeCurrentOrPriorYearConfig WHERE measurementyear = $measurementYear) AS tmp", dbProperties)
+
+  val sampleSizeConfigLookup = sampleSizeConfigDF.collect().map(row =>
+    (row.getAs[Long]("MeasurementYear") + "_" + row.getAs[Double]("CurrentYearOrPriorReportedYearRate"), row.getAs[Int]("SampleSize"))
+  ).toMap
+
+  val broadcastSampleSizeConfigLookup = spark.sparkContext.broadcast(sampleSizeConfigLookup)
+
+  // Step 6: Call your logic (e.g. reduction logic)
+  val hedisProductlineandmeasuresTypeMrrFinal = getReductionDataset(
+    jsonSampleRequest,
+    broadcastSampleSizeInfo.value,
+    healthPlanProductCategory = ???, // You need to load this
+    measurementYear
+  )
+
+  hedisProductlineandmeasuresTypeMrrFinal.show()
+
+  // Step 7: Update the request table to IN_PROGRESS
+  val updateQuery = s"""
+    UPDATE hedisSamplingRequest_MRR
+    SET campaignStatus = 'IN_PROGRESS', dateupdated = GETDATE()
+    WHERE correlationid = '$corrId' AND requesttype = 'SAMPLING' AND campaignStatus = 'received' AND issamplingprocessed = 0
+  """
+  // Execute using JDBC update logic (not supported directly in Spark - you might need custom connector or use SQL client)
+}
