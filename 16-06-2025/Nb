@@ -1,90 +1,50 @@
-import org.apache.spark.sql.functions._
-import org.apache.spark.sql.{Dataset, Row, SparkSession}
-import java.util.Properties
-import org.apache.spark.broadcast.Broadcast
+// Databricks Scala Notebook: HEDIS Sampling Conversion from Spark Java
 
-val dbProperties = new Properties()
-dbProperties.put("user", "pltadmin")
-dbProperties.put("password", "pltq@dmin!@#5123")
-dbProperties.put("driver", "com.microsoft.sqlserver.jdbc.SQLServerDriver")
+import org.apache.spark.sql.functions._ import org.apache.spark.sql.expressions.Window import org.apache.spark.sql.{SparkSession, Dataset, Row} import java.util.Properties
+
+val spark = SparkSession.builder().appName("HEDIS Sampling").getOrCreate()
+
+val dbProperties = new Properties() dbProperties.put("user", "pltadmin") dbProperties.put("password", "pltq@dmin!@#5123") dbProperties.put("driver", "com.microsoft.sqlserver.jdbc.SQLServerDriver")
 
 val jdbcUrl = "jdbc:sqlserver://10.100.14.19;databaseName=BICDataMart_PLT_QA"
 
-// Step 1: Fetch active correlation IDs
-val correlationIdDF = spark.read
-  .jdbc(jdbcUrl,
-    "(SELECT correlationid FROM hedisSamplingRequest_MRR WHERE requesttype = 'SAMPLING' AND campaignStatus = 'received' AND issamplingprocessed = 0) AS tmp",
-    dbProperties)
+// Fetch active correlation IDs val correlationIdDF = spark.read.jdbc(jdbcUrl, "(SELECT correlationid FROM hedisSamplingRequest_MRR WHERE requesttype = 'SAMPLING' AND campaignStatus = 'received' AND issamplingprocessed = 0) tmp", dbProperties) val correlationIds = correlationIdDF.collect().map(_.getString(0))
 
-val correlationIds = correlationIdDF.collect().map(_.getString(0))
+for (corrId <- correlationIds) { val jsonObject = spark.read.jdbc(jdbcUrl, s"(SELECT jsonobject FROM hedisSamplingRequest_MRR WHERE correlationid = '$corrId') tmp", dbProperties) .as[String].first()
 
-// Step 2: Iterate correlation IDs
-for (corrId <- correlationIds) {
-  
-  // Step 3: Fetch JSON object
-  val jsonObjectDF = spark.read
-    .jdbc(jdbcUrl,
-      s"(SELECT jsonobject FROM hedisSamplingRequest_MRR WHERE correlationid = '$corrId' AND requesttype = 'SAMPLING' AND campaignStatus = 'received' AND issamplingprocessed = 0) AS tmp",
-      dbProperties)
-    .as[String]
-    .first()
+val jsonDF = spark.read.json(Seq(jsonObject).toDS())
 
-  val jsonDataset = spark.createDataset(Seq(jsonObjectDF))
-  val json = spark.read.json(jsonDataset)
+val sampleRequest = jsonDF.withColumn("data", explode(col("data"))) .withColumn("subMeasures", explode(col("data.subMeasures"))) .select( col("productCategory").alias("ProductLine"), col("data.measureGroup").alias("MeasureCode"), col("subMeasures.clinicalSubMeasureId").alias("ClinicalMeasureId"), (col("data.oversamplingRate") / 100).alias("OverSamplingRate"), col("measurementYear"), col("subMeasures.cyar").alias("CYAR"), col("subMeasures.pyr").alias("PYR"), col("excludeEmp").cast("integer").alias("IsEmployee"), lit(corrId).alias("CorrelationId"), col("organizationId"), col("runConfigId"), col("submissionId") )
 
-  val jsonSampleRequest = json.withColumn("data", explode(col("data")))
-    .withColumn("subMeasures", explode(col("data.subMeasures")))
-    .select(
-      col("productCategory").alias("ProductLine"),
-      col("data.measureGroup").alias("MeasureCode"),
-      col("subMeasures.clinicalSubMeasureId").alias("ClinicalMeasureId"),
-      (col("data.oversamplingRate") / 100).alias("OverSamplingRate"),
-      col("measurementYear"),
-      col("subMeasures.cyar").alias("CYAR"),
-      col("subMeasures.pyr").alias("PYR"),
-      col("excludeEmp").cast("integer").alias("IsEmployee"),
-      lit(corrId).alias("CorrelationId"),
-      col("organizationId"),
-      col("runConfigId"),
-      col("submissionId")
-    )
+val measurementYear = sampleRequest.select("measurementYear").first().getLong(0)
 
-  val measurementYear = jsonSampleRequest.select("measurementYear").first().getLong(0)
-  val organizationId = jsonSampleRequest.select("organizationId").first().getLong(0)
-  val runConfigId = jsonSampleRequest.select("runConfigId").first().getLong(0)
-  val submissionId = jsonSampleRequest.select("submissionId").first().getLong(0)
-  val measureCodes = jsonSampleRequest.select("MeasureCode").distinct().as[String].collect().toList
+val productCategoryDF = spark.read.jdbc(jdbcUrl, "(select * from vw_healthPlanProductCategory) tmp", dbProperties) val sampleSizeDF = spark.read.jdbc(jdbcUrl, "(select * from hedisMeasuresSampleSizeInfo where measurementyear = 2024) tmp", dbProperties) val sampleConfigDF = spark.read.jdbc(jdbcUrl, s"(SELECT * FROM hedisSampleSizeCurrentOrPriorYearConfig WHERE measurementyear = $measurementYear) tmp", dbProperties)
 
-  // Step 4: Metadata table 1 - Sample Size Info
-  val hedisMeasuresSampleSizeInfo = spark.read
-    .jdbc(jdbcUrl, "(SELECT * FROM hedisMeasuresSampleSizeInfo WHERE measurementyear = 2024) AS tmp", dbProperties)
-  val broadcastSampleSizeInfo = spark.sparkContext.broadcast(hedisMeasuresSampleSizeInfo.collect().toList)
+val broadcastSampleSize = spark.sparkContext.broadcast(sampleSizeDF.collect().toList) val broadcastSampleConfig = spark.sparkContext.broadcast(sampleConfigDF.collect().map(row => (row.getAsLong + "_" + row.getAsDouble, row.getAsInt) ).toMap)
 
-  // Step 5: Metadata table 2 - Config lookup
-  val sampleSizeConfigDF = spark.read
-    .jdbc(jdbcUrl, s"(SELECT * FROM hedisSampleSizeCurrentOrPriorYearConfig WHERE measurementyear = $measurementYear) AS tmp", dbProperties)
+val reducedDF = sampleRequest .filter(!$"ClinicalMeasureId".isin("HBD", "BPD", "GSD1") && $"ProductLine" =!= "Exchange") .withColumn("CYAR", when(col("ClinicalMeasureId").isin("GSD2") && col("CYAR").isNotNull, lit(100) - col("CYAR")).otherwise(col("CYAR"))) .withColumn("PYR", when(col("ClinicalMeasureId").isin("GSD2") && col("PYR").isNotNull, lit(100) - col("PYR")).otherwise(col("PYR")))
 
-  val sampleSizeConfigLookup = sampleSizeConfigDF.collect().map(row =>
-    (row.getAs[Long]("MeasurementYear") + "_" + row.getAs[Double]("CurrentYearOrPriorReportedYearRate"), row.getAs[Int]("SampleSize"))
-  ).toMap
+val enrichedDF = reducedDF .join(productCategoryDF, reducedDF("ProductLine") === productCategoryDF("productCategory")) .join(sampleSizeDF, Seq("MeasureCode", "ProductLine", "measurementYear"), "left")
 
-  val broadcastSampleSizeConfigLookup = spark.sparkContext.broadcast(sampleSizeConfigLookup)
+val hybridMeasures = enrichedDF.filter(col("ClinicalMeasureId").isNotNull) val clinicalMeasureList = hybridMeasures.select("ClinicalMeasureId").distinct()
 
-  // Step 6: Call your logic (e.g. reduction logic)
-  val hedisProductlineandmeasuresTypeMrrFinal = getReductionDataset(
-    jsonSampleRequest,
-    broadcastSampleSizeInfo.value,
-    healthPlanProductCategory = ???, // You need to load this
-    measurementYear
-  )
+val clinicalMeasureClass = spark.read.jdbc(jdbcUrl, "(SELECT * FROM clinicalMeasureClassification) tmp", dbProperties) val dimClinicalMeasureList = spark.read.jdbc(jdbcUrl, "(SELECT * FROM dimClinicalMeasureList) tmp", dbProperties) val clinicalReportingPeriod = spark.read.jdbc(jdbcUrl, "(SELECT * FROM clinicalReportingPeriod) tmp", dbProperties) val factQualityReport = spark.read.parquet("/mnt/data/factQualityReport") val dimVisit = spark.read.parquet("/mnt/data/dimVisit") val dimPatient = spark.read.parquet("/mnt/data/dimPatient") val memberEnrollment = spark.read.parquet("/mnt/data/memberEnrollment")
 
-  hedisProductlineandmeasuresTypeMrrFinal.show()
+val fqrIntermediate = hybridMeasures.alias("hm").join(factQualityReport.alias("fqr"), Seq("SubmissionId", "organizationId", "RunConfigId")) .select("hm.", "fqr.")
 
-  // Step 7: Update the request table to IN_PROGRESS
-  val updateQuery = s"""
-    UPDATE hedisSamplingRequest_MRR
-    SET campaignStatus = 'IN_PROGRESS', dateupdated = GETDATE()
-    WHERE correlationid = '$corrId' AND requesttype = 'SAMPLING' AND campaignStatus = 'received' AND issamplingprocessed = 0
-  """
-  // Execute using JDBC update logic (not supported directly in Spark - you might need custom connector or use SQL client)
-}
+val memberEnrollmentEmployee = fqrIntermediate.alias("fqrInt") .join(memberEnrollment.alias("ME"), col("fqrInt.patientid") === col("ME.patientid")) .select("fqrInt.", "ME.")
+
+val eligibleMembers = fqrIntermediate.alias("fqr") .join(memberEnrollmentEmployee.alias("mee"), Seq("patientid"), "inner") .join(clinicalReportingPeriod.alias("crp"), Seq("reportingperiodid"), "left") .join(dimClinicalMeasureList.alias("dcml"), Seq("clinicalmeasureid"), "inner") .join(dimPatient.alias("dp"), Seq("patientid"), "inner") .join(dimVisit.alias("dv"), Seq("visitsui"), "left") .filter(col("ClinicalStatusCode").isin(1, 6)) .filter(col("SubmissionId") === lit(sampleRequest.select("submissionId").first().getLong(0))) .filter(col("periodstartdate") <= to_date(lit(s"$measurementYear-01-01"))) .filter(col("periodenddate") >= to_date(lit(s"$measurementYear-12-31")))
+
+val ppcMeasures = eligibleMembers.filter(col("measurecode") === "PPC") .withColumn("rnk", row_number().over(Window.orderBy(lit(1))).cast("long"))
+
+val trcMeasures = eligibleMembers.filter(col("measurecode") === "TRC") .withColumn("rnk", row_number().over(Window.orderBy(lit(1))).cast("long"))
+
+val coaMeasures = eligibleMembers.filter(col("measurecode") === "COA") .withColumn("rnk", row_number().over(Window.orderBy(lit(1))).cast("long"))
+
+// Logic to compute MRSS and OS can go here... // Optional update logic to set sampling status to IN_PROGRESS can be done using a JDBC connection
+
+println("PPC sample count: " + ppcMeasures.count()) println("TRC sample count: " + trcMeasures.count()) println("COA sample count: " + coaMeasures.count()) }
+
+spark.stop()
+
