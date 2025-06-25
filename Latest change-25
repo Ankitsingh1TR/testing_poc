@@ -1,0 +1,76 @@
+MP and PP Completion
+
+MP stands for Measure Processing – this step computes eligibility, applies HEDIS logic, and prepares the output per measure.
+
+PP stands for Post Processing – this step finalizes and formats the data post-MP, including audit readiness and preparation for freezing.
+
+Both MP and PP must be fully completed for the measurement year before sampling can be triggered.
+
+
+
+---
+
+✅ 2. Final Quality Review (FQR)
+
+Sampling can be executed only after FQR is complete.
+
+Post FQR, data is considered final and is frozen (locked) for consistent sampling and audit.
+
+
+
+---
+
+✅ 3. RE Data (Raw Extract) in Parquet Format
+
+RE stands for Raw Extract, which refers to source-level data tables provided in Parquet format.
+
+These include:
+
+RE_Member, RE_Claims, RE_Encounter, RE_Eligibility, RE_Diagnosis, RE_Procedure, RE_Medication, RE_Product, RE_Provider, RE_Lab, etc.
+
+
+All required RE tables must be fully populated and validated as part of pre-sampling data setup.
+
+
+
+---
+
+✅ 4. List of Applicable Hybrid Measures for MY25
+
+Sampling in MY25 applies to the following 8 hybrid measures:
+
+WCC – Weight Assessment and Counseling
+
+LSC – Lead Screening in Children
+
+COA – Care for Older Adults
+
+CBP – Controlling High Blood Pressure
+
+GSD – Glycemic Status Assessment for Diabetes
+
+BPD – Blood Pressure Control for Diabetes
+
+TRC – Transitions of Care
+
+PPC – Prenatal and Postpartum Care
+
+
+These measures may have sub-parts (e.g., TRC by discharge type, PPC by delivery event), and sampling logic must account for those where applicable.
+
+
+---
+
+✅ 5. Metadata and Request Tables – Must Be Preloaded
+
+Sampling depends on the following three metadata tables and one request table, which must be available and populated before execution:
+
+Table Name	Purpose
+
+hedisMeasureSampleSizeInfo	Provides standard MRSS values per product line
+hedisSampleSizeCurrentOrPriorYearConfig	Stores CYAR and PYAR values for sample size reduction
+hedisMeasuresRandValue	Stores RAND values used to determine sampling START position
+hedisSamplingRequest	Receives runtime sampling parameters, including measure, product, runConfigId
+
+
+These four tables are considered strict prerequisites for launching the sampling module.
