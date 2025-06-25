@@ -189,3 +189,127 @@ Not be in hospice or deceased
 How You Can Explain to Your Colleague:
 
 > “Eligible members are those who qualify for a specific HEDIS measure based on rules like age, diagnosis, enrollment, and visit history. We apply these filters first, and then run sampling only on the members who pass all of them.”
+
+
+Summary of HEDIS Sampling Design – For Colleague Explanation
+
+We are implementing systematic sampling logic for HEDIS hybrid measures in PLT 2.0 for MY2024. This process selects eligible members for medical record review, following NCQA rules.
+
+
+---
+
+ 1. When Sampling Happens
+
+Sampling is done only once per measurement year.
+
+It will happen after the data passes Final Quality Review (FQR).
+
+After FQR, the data is frozen (copied and locked) so it doesn't change — sampling will only run on this frozen dataset.
+
+
+
+---
+
+ 2. Where Sampling Runs
+
+Based on the incoming request, we get a runConfigId.
+
+This helps us figure out which target tables to use by looking up the SourceDetailId from metadata.
+
+For hybrid measures, the main table used is usually HEDIS_BaseData_Lck (the frozen version of base data).
+
+
+
+---
+ 3. Who Gets Sampled
+
+Sampling is done on eligible members (EM) for each measure.
+
+From the EM pool, we pick a set number of members using a logic that depends on MRSS and Oversample.
+
+
+
+---
+
+4. How Many Members to Sample
+
+The required sample size (called MRSS) comes from metadata.
+
+We may reduce MRSS based on the performance rate:
+
+Use CYAR (Current Year Admin Rate) or PYAR (Prior Year Audited Rate) — whichever is lower
+
+If it's an inverse measure (like GSD2), we first do 100 - rate before applying reduction logic
+
+
+Add oversample (usually 10%, configurable up to 20%) to cover replacements
+
+
+
+---
+
+5. How Members Are Chosen
+
+We sort eligible members alphabetically (last name, first name, DOB, event date).
+
+In even years like MY2024 → sort A to Z
+
+In odd years → sort Z to A
+
+
+We use a random number (RAND) to decide where to start
+
+Then apply this formula:
+
+ith_member = START + (i-1) × (EM / (MRSS + OS))
+
+This ensures fair, evenly spaced sampling
+
+
+
+---
+
+6. Who Gets Removed
+
+Members with invalid or restricted data (e.g., deceased, hospice, employee) are removed from the sample
+
+We replace them using members from the oversample list
+
+
+
+---
+ 7. Special Handling
+
+If the client wants shared samples between related measures (like GSD, EED, BPD), then:
+
+Primary sample and oversample must be the same
+
+If one member is excluded from one measure, they must be excluded from all related ones
+
+
+Some measures (like TRC, PPC) are visit-based, so the same member can appear multiple times
+
+
+
+---
+
+8. After Sampling is Done
+
+Update the status in hedisSamplingRequest_MRR:
+
+Set campaignStatus = 'PROCESSED'
+
+Set isSamplingProcessed = 1
+
+
+Store the actual MRSS value used (e.g., if only 110 eligible members were available, store 110 — not the default 411)
+
+
+
+---
+
+How to Explain Overall:
+
+> “We're selecting a fixed number of eligible members for HEDIS sampling using a fair, metadata-driven process. Sampling happens only once per year and only after the data is finalized and frozen. We adjust the sample size based on performance rates, sort the members alphabetically, pick them using a formula, and exclude invalid records. The system supports both measure-specific and shared sampling.”
+
+
