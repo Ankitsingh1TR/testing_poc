@@ -1,0 +1,124 @@
+
+1. Sampling should run only once per year
+
+We will run sampling only once for each measurement year. This is to make sure we don’t select different samples by mistake if the process runs again.
+
+
+---
+
+2. Sampling starts after FQR is completed
+
+Sampling will only happen after the final quality checks (FQR) are done. This means the data is complete, clean, and approved by the QA team.
+
+
+---
+
+3. Sampling should use frozen data
+
+Once FQR is passed, we take a copy of the data and freeze it. This frozen version doesn’t change and is used for sampling. It ensures the same data is used for audit and reporting later.
+
+
+---
+
+4. Get sampling tables using runConfigId
+
+From the incoming JSON request, we get a value called runConfigId.
+We use this to look up which tables we need to run sampling on (from metadata tables like RunConfiguration and SourceDetail).
+
+
+---
+
+5. Use metadata table for sample size
+
+We use the metadata table hedisMeasureSampleSizeInfo to decide how many members we need in our sample (this number is called MRSS — Minimum Required Sample Size).
+
+
+---
+
+6. Reduce sample size based on rate
+
+If we have a good result from last year or this year’s admin data, we can reduce the number of members we need to sample (MRSS).
+We choose the lowest rate between current year and prior year.
+
+
+---
+
+7. For inverse measures, use 100 - rate
+
+Some measures (like GSD2) use an inverse rate. So instead of using the rate directly, we subtract it from 100 and then use that to reduce sample size.
+
+
+---
+
+8. Oversampling logic
+
+We add some extra members in the sample (usually 10%) in case some are later found invalid (e.g., deceased).
+This percentage is configurable, but can’t be more than 20% unless we get approval.
+
+
+---
+
+9. Sorting eligible members
+
+When we pick members, we sort them alphabetically by last name, first name, date of birth, and event date.
+In even years (like MY2024) we sort from A to Z. In odd years (like MY2023), we sort Z to A.
+
+
+---
+
+10. How we choose members
+
+We use a random number (RAND) to pick a starting point.
+Then we select every "ith" member using a formula. This makes the sample more fair and spread out.
+
+
+---
+
+11. Store the actual MRSS
+
+If we only have 120 members, we store MRSS as 120 — not the standard 411. This gives an accurate count of how many members were truly available for sampling.
+
+
+---
+
+12. Shared samples across related measures
+
+For some related measures (like GSD, EED, and BPD), if the client chooses to use the same sample:
+
+Then sampled and oversample members must match
+
+And if one member is excluded from one measure, they should be excluded from all
+
+
+
+---
+
+13. Visit-based measures
+
+Some measures (like TRC and PPC) are based on visits, not members.
+So the same member can appear multiple times in the sample if they had multiple qualifying visits.
+
+
+---
+
+14. Exclude invalid members
+
+After sampling, we should remove members who are invalid (e.g., deceased, employee, hospice).
+Then we replace them using members from the oversample list.
+
+
+---
+
+15. Update sampling status in DB
+
+Once sampling is done, update the MRR table:
+
+Set campaignStatus = 'PROCESSED'
+
+Set isSamplingProcessed = 1
+
+
+
+---
+
+Let me know if you'd like this in a Word/PDF format or want a presentation version to explain in your next team call.
