@@ -1,0 +1,50 @@
+Sampling should run only once per measurement year, based on frozen data after the FQR stage.
+
+Sampling logic will be triggered using runConfigId from the JSON request, which helps identify the target tables using the SourceDetailId.
+
+MRSS (Minimum Required Sample Size) is derived using metadata table hedisMeasureSampleSizeInfo. It can be reduced using the lowest value among prior year’s audited rate or current year’s admin rate.
+
+For inverse measures like GSD2, use 100 - (rate) before applying MRSS reduction.
+
+Oversampling percentage is configurable (default 10%) and should not exceed 20% unless there is NCQA approval.
+
+If Eligible Members (EM) <= MRSS, include all EMs in the sample.
+
+If EM > MRSS + OS, apply systematic sampling logic using calculated values:
+
+Calculate N = EM / (MRSS + OS)
+
+Get START = RAND × N
+
+Select each ith member using:
+ith_member = START + [(i-1) × (EM / (MRSS + OS))]
+(rounding as per .5 rule)
+
+
+Sort eligible members in alphabetical order using last name, first name, DOB, and event date. For MY2024 (even year), sort from A to Z.
+
+Ensure oversample members are consistent when same samples are shared between grouped measures like GSD, EED, BPD.
+
+If any member is excluded due to valid data errors (e.g., deceased, hospice, employee), it should be replaced from the oversample list, and exclusion must reflect across all related measures.
+
+Once sampling is completed:
+
+Update hedisSamplingRequest_MRR:
+campaignStatus = 'PROCESSED'
+issamplingprocessed = 1
+
+
+Save the actual MRSS value in DB (e.g., if only 110 members are available, store 110 instead of default 411).
+
+Sampling logic will be based on metadata tables:
+
+hedisMeasureSampleSizeInfo (MRSS)
+
+hedisSampleSizeCurrentOrPriorYearConfig (rate-based MRSS reduction)
+
+hedisMeasuresRandValue (RAND values for START)
+
+
+TRC and PPC are visit-based sampling measures, so the same member may appear multiple times if they have multiple qualifying visits.
+
+Shared sampling logic, exclusions, and sorting direction should all follow measurement year-specific rules mentioned in the BRD.
