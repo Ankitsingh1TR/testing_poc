@@ -122,3 +122,70 @@ Set isSamplingProcessed = 1
 ---
 
 Let me know if you'd like this in a Word/PDF format or want a presentation version to explain in your next team call.
+Who are Eligible Members (EM) in HEDIS Sampling?
+
+Eligible Members are those members who meet all the basic criteria defined for a specific HEDIS hybrid measure. These are the people from whom we are allowed to pick samples.
+
+
+---
+
+General Criteria to Be Eligible:
+
+1. Enrolled in a valid product line
+(e.g., Commercial, Medicaid, Medicare)
+
+
+2. Have the required age and gender
+(e.g., for Breast Cancer Screening, only women aged 50–74)
+
+
+3. Have continuous enrollment
+for the time period required by the measure (e.g., full measurement year)
+
+
+4. Have qualifying events
+like visits, procedures, diagnoses, based on the measure's logic
+
+
+5. Have a valid provider or health plan association
+
+
+
+
+---
+
+Who is NOT Eligible (Must Be Excluded)?
+
+Members marked as deceased
+
+Those under hospice care
+
+Employees of the health plan
+
+Records flagged as duplicate or invalid
+
+Members outside the age/gender limits of the measure
+
+
+
+---
+
+Example for a Hybrid Measure (e.g., GSD)
+
+To be eligible:
+
+Member should have had a diagnosis of diabetes
+
+Be between 18–75 years old
+
+Be enrolled for at least 11 months
+
+Not be in hospice or deceased
+
+
+
+---
+
+How You Can Explain to Your Colleague:
+
+> “Eligible members are those who qualify for a specific HEDIS measure based on rules like age, diagnosis, enrollment, and visit history. We apply these filters first, and then run sampling only on the members who pass all of them.”
