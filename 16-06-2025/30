@@ -1,0 +1,66 @@
+Systematic Sampling Documentation (Final from BRD + su.pdf)
+1. Definition of Sampling
+Sampling is the process of selecting a subset of eligible members from the total population to evaluate performance measures. In hybrid HEDIS measures, this subset is used for medical chart review where claims data may be incomplete. The selected sample is statistically valid and represents the full population. Sampling supports audit requirements by NCQA.
+2. Prerequisites for Sampling
+Before sampling can begin, the following prerequisites must be met:
+- FQR (Final Quality Report) must be generated and frozen.
+- Data in RE layer must be available and finalized.
+- A sampling request must be created and inserted into `hedisSamplingRequest_MRR`.
+- Required metadata tables and rate mappings (CYAR, PYR, MRSS) must be preloaded.
+- Configuration for shared measures, OS %, and anchor logic must be present.
+3. Purpose and Triggering of Sampling
+Sampling is triggered once per year after data is frozen. It is used for hybrid measures that require medical record review. The process ensures consistent, auditable, and efficient evaluation of healthcare performance.
+4. Sampling Request and Metadata
+The request is provided as JSON and stored in the `hedisSamplingRequest_MRR` table. Important fields include:
+- submissionId, domainId, measurementYear, campaignId
+- runConfigId (to fetch CYAR/PYR)
+- productLineId, clientId
+- hybridMeasures[], sharedSampleGroup
+Each field drives filtering, processing, and configuration mapping.
+5. Member Evaluation and Sorting
+Members are selected from frozen FQR outputs. Exclusions are applied:
+- Employees, deceased, hospice, data errors (VDE)
+- Each measure may apply its own additional logic (e.g., delivery anchor for PPC)
+Sorting:
+- Even year → A to Z (ascending)
+- Odd year → Z to A (descending)
+Sort order = LastName, FirstName, DOB.
+6. MRSS and Oversample Rules
+Minimum Required Sample Size (MRSS) is generally 411 but can be reduced based on rates:
+- Use lowest between CYAR and PYR (except TRC uses only PYR).
+- Use 100 - rate for inverse measures (e.g., GSD2).
+Oversample (OS) = % of MRSS (usually 10%).
+If EM < MRSS → use all, OS = 0.
+7. Sampling Logic Based on EM Size
+Scenario A: EM ≤ MRSS → All included in primary.
+Scenario B: MRSS < EM ≤ MRSS + OS → Sorted top MRSS are primary, rest are backup.
+Scenario C: EM > MRSS + OS:
+- Get RAND from config table.
+- N = EM / (MRSS + OS)
+- START = RAND × N
+- Pick every Nth record starting from START.
+8. Exclusion and Replacement Logic
+After sampling, members are validated. If any are excluded (employee, deceased, VDE), they are replaced by members from the oversample list. Sample integrity is preserved.
+9. Output Dataset and Format
+Final dataset is stored in RE parquet paths and includes:
+- submissionId, campaignId, runConfigId, domainId, productLineId
+- measureId, memberId, rank, RAND, isPrimary, isExcluded, exclusionReason
+Partitioned by domain, year, submissionId, and measure.
+10. Unique BRD Business Rules (Not in su.pdf)
+- If CYAR and PYR are NULL → fallback MRSS = 411.
+- Shared samples use lowest rate across all related measures.
+- If EM < MRSS → OS is ignored.
+- TRC always uses PYR (not CYAR).
+11. Unique Technical Design (Only in su.pdf)
+- Spark reads JSON, applies schema inference.
+- Intermediate datasets are not saved as SQL tables.
+- Dataset names like `EligibleMemberBeforeExclusion` and `FinalSamplingOutput` are used.
+- CampaignId controls downstream naming and output path.
+- Parquet outputs stored with Spark write operations in domain-partitioned folders.
+12. Stored Procedure to Spark Mapping
+SQL → Spark conversions:
+- `usp_HedisHybridSamplingLogicMRRJsonConsumption` → parse JSON request
+- `usp_CalculateReductionfactor_CYAR_PYR` → map MRSS
+- `usp_HedisHybridSamplingLogic_MRR_MY2021` → apply business logic
+- `usp_SampleOrderAsPerOddevenMYear` → sorting + rank
+- `usp_DownStreamTableInsertUpdate` → RE save and status update
