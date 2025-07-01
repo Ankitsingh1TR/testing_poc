@@ -64,3 +64,28 @@ SQL → Spark conversions:
 - `usp_HedisHybridSamplingLogic_MRR_MY2021` → apply business logic
 - `usp_SampleOrderAsPerOddevenMYear` → sorting + rank
 - `usp_DownStreamTableInsertUpdate` → RE save and status update
+In addition, the following SQL tables are also required:
+
+vw_healthPlanProductCategory
+
+clinicalmeasureclassification
+
+ClinicalReportingPeriod
+
+dimClinicalMeasureList
+
+
+We also need to read data from the following Parquet sources:
+
+DimVisit
+
+DimPatient
+
+MemberEnrollment
+
+DimOrganization
+
+FactQualityReport
+
+
+These tables are necessary for processing sampling logic, fetching metadata, identifying eligible members, and generating the final sampled dataset.
