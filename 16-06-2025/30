@@ -89,3 +89,46 @@ FactQualityReport
 
 
 These tables are necessary for processing sampling logic, fetching metadata, identifying eligible members, and generating the final sampled dataset.
+In this step, we fetch measure-specific eligible members for each correlation ID.
+Then, we apply sorting on the following columns:
+
+lastName
+
+firstName
+
+dateOfBirth
+
+
+Sorting depends on the measurement year:
+
+If the measurement year is even, sorting is done in ascending order.
+
+If the measurement year is odd, sorting is done in descending order.
+
+
+After sorting, we evaluate the eligible member count (EM) against the minimum required sample size (MRSS) and oversampling (OS) limits using the following 3 conditions:
+
+✅ Condition 1: EM < MRSS
+
+All eligible members are selected as Primary members.
+
+
+✅ Condition 2: MRSS ≤ EM < MRSS + OS
+
+The first MRSS members (based on the sorted list) are Primary, and the remaining up to OS are Auxiliary.
+
+
+✅ Condition 3: EM ≥ MRSS + OS
+
+Apply random sampling using the RAND logic:
+
+N = EM / (MRSS + OS)
+Index = START + (i-1) * N
+
+Select MRSS + OS members.
+
+First MRSS → Primary, remaining OS → Auxiliary
+
+
+
+Once this is done, the process continues with the next correlation ID.
